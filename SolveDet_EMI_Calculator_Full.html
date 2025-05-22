@@ -1,0 +1,189 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SolveDet EMI Calculator</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    body {
+      font-family: 'Helvetica Neue', sans-serif;
+      background: #f7f7f7;
+      padding: 40px 0;
+    }
+    .container {
+      max-width: 600px;
+      margin: auto;
+      background: #fff;
+      padding: 30px;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    }
+    input, button {
+      width: 100%;
+      padding: 12px;
+      margin-bottom: 20px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 15px;
+    }
+    button {
+      background-color: #D28C6B;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    h2 { text-align: center; margin-bottom: 25px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td {
+      padding: 6px;
+      text-align: right;
+      border-bottom: 1px solid #eee;
+    }
+    th:first-child, td:first-child {
+      text-align: left;
+    }
+    #schedule tr.hidden { display: none; }
+    .button-group {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>EMI Calculator</h2>
+    <label>Loan Amount</label>
+    <input type="number" id="amount" placeholder="e.g. 1000000" />
+    <label>Interest Rate (annual %)</label>
+    <input type="number" id="rate" step="0.01" placeholder="e.g. 9.5" />
+    <label>Loan Term (years)</label>
+    <input type="number" id="term" placeholder="e.g. 5" />
+    <button id="calculateBtn">Calculate</button>
+
+    <div id="results" style="display: none;">
+      <p><strong>Monthly EMI:</strong> <span id="emi"></span></p>
+      <p><strong>Total Payment:</strong> <span id="total"></span></p>
+      <p><strong>Total Interest:</strong> <span id="interest"></span></p>
+      <canvas id="emiChart" style="max-width: 100%; margin: 20px 0;"></canvas>
+
+      <div class="button-group">
+        <button id="amortBtn" disabled>View Amortization</button>
+        <button id="pdfBtn" disabled>Download PDF</button>
+      </div>
+
+      <div id="schedule" style="display: none;"></div>
+      <div style="text-align: center;">
+        <button id="moreBtn" disabled style="display: none;">Show Full Schedule</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const calcBtn = document.getElementById('calculateBtn');
+      const amortBtn = document.getElementById('amortBtn');
+      const pdfBtn = document.getElementById('pdfBtn');
+      const moreBtn = document.getElementById('moreBtn');
+
+      function toggleButtons(state) {
+        amortBtn.disabled = !state;
+        pdfBtn.disabled = !state;
+        moreBtn.disabled = !state;
+      }
+
+      function drawChart(principal, interest) {
+        const ctx = document.getElementById('emiChart').getContext('2d');
+        if (window.emiChart) window.emiChart.destroy();
+        window.emiChart = new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            labels: ['Principal', 'Interest'],
+            datasets: [{
+              data: [principal, interest],
+              backgroundColor: ['#D28C6B', '#f4c7ab']
+            }]
+          },
+          options: {
+            responsive: true,
+            plugins: { legend: { position: 'bottom' } }
+          }
+        });
+      }
+
+      function buildSchedule(principal, rate, months, emi) {
+        let html = '<table><tr><th>Month</th><th>Principal</th><th>Interest</th><th>Balance</th></tr>';
+        let balance = principal;
+        for (let i = 1; i <= months; i++) {
+          const interest = balance * rate;
+          const principalPart = emi - interest;
+          balance -= principalPart;
+          const hidden = i > 12 ? ' class="hidden"' : '';
+          html += `<tr${hidden}><td>${i}</td><td>${principalPart.toFixed(2)}</td><td>${interest.toFixed(2)}</td><td>${Math.max(balance, 0).toFixed(2)}</td></tr>`;
+        }
+        html += '</table>';
+        document.getElementById('schedule').innerHTML = html;
+      }
+
+      function calculateEMI() {
+        const amount = parseFloat(document.getElementById('amount').value);
+        const rate = parseFloat(document.getElementById('rate').value);
+        const term = parseFloat(document.getElementById('term').value);
+        if (!amount || !rate || !term) return alert('Please fill all fields.');
+
+        const monthlyRate = rate / 12 / 100;
+        const months = term * 12;
+        const emi = (amount * monthlyRate * Math.pow(1 + monthlyRate, months)) /
+                    (Math.pow(1 + monthlyRate, months) - 1);
+        const totalPayment = emi * months;
+        const totalInterest = totalPayment - amount;
+
+        document.getElementById('emi').innerText = Math.round(emi);
+        document.getElementById('total').innerText = totalPayment.toFixed(2);
+        document.getElementById('interest').innerText = totalInterest.toFixed(2);
+        document.getElementById('results').style.display = 'block';
+
+        drawChart(amount, totalInterest);
+        buildSchedule(amount, monthlyRate, months, Math.round(emi));
+        toggleButtons(true);
+      }
+
+      calcBtn.addEventListener('click', calculateEMI);
+
+      amortBtn.addEventListener('click', () => {
+        document.getElementById('schedule').style.display = 'block';
+        moreBtn.style.display = 'inline-block';
+      });
+
+      moreBtn.addEventListener('click', () => {
+        document.querySelectorAll('#schedule tr.hidden').forEach(row => row.classList.remove('hidden'));
+        moreBtn.style.display = 'none';
+      });
+
+      pdfBtn.addEventListener('click', () => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        doc.setFontSize(18);
+        doc.text('SolveDet EMI Calculator', 20, 20);
+        doc.setFontSize(12);
+        doc.text('Monthly EMI: ' + document.getElementById('emi').innerText, 20, 40);
+        doc.text('Total Payment: ' + document.getElementById('total').innerText, 20, 50);
+        doc.text('Total Interest: ' + document.getElementById('interest').innerText, 20, 60);
+        let y = 80;
+        document.querySelectorAll('#schedule table tr').forEach(row => {
+          const cols = row.querySelectorAll('td, th');
+          const line = Array.from(cols).map(col => col.textContent).join(' | ');
+          if (y > 270) { doc.addPage(); y = 20; }
+          doc.text(line, 20, y);
+          y += 8;
+        });
+        doc.save('SolveDet-EMI-Schedule.pdf');
+      });
+    });
+  </script>
+</body>
+</html>
